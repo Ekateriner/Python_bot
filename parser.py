@@ -61,9 +61,11 @@ def parser_other():
             author_name = (author_soup.find('h1'))['title']
             other_haiku[author_name] = []
 
-            for text in author_soup.find_all('div', {"class": "poetry"}):
+            for text in author_soup.find_all('div', {"class": "block_padding"}):
                 haiku = '{}:\n{}\n\n'.format(author_name, text.find('div', {"class": "poetry_title"}).get_text())
-                haiku_text = author_soup.find('div', {"class": "block_padding"}).get_text()
+                haiku_text = author_soup.find('div', {"class": "foreword"}).get_text()
+                haiku = '{}{}\n'.format(haiku, haiku_text)
+                haiku_text = author_soup.find('div', {"class": "poetry_text"}).get_text()
                 haiku = '{}{}'.format(haiku, haiku_text)
                 other_haiku[author_name].append(haiku)
     return other_haiku

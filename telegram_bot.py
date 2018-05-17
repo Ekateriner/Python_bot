@@ -62,9 +62,11 @@ def parser_other():
             author_name = (author_soup.find('h1'))['title']
             other_haiku[author_name] = []
 
-            for text in author_soup.find_all('div', {"class": "poetry"}):
+            for text in author_soup.find_all('div', {"class": "block_pandding"}):
                 haiku = '{}:\n{}\n\n'.format(author_name, text.find('div', {"class": "poetry_title"}).get_text())
-                haiku_text = author_soup.find('div', {"class": "block_padding"}).get_text()
+                haiku_text = author_soup.find('div', {"class": "foreword"}).get_text()
+                haiku = '{}{}\n'.format(haiku, haiku_text)
+                haiku_text = author_soup.find('div', {"class": "poetry_text"}).get_text()
                 haiku = '{}{}'.format(haiku, haiku_text)
                 other_haiku[author_name].append(haiku)
     return other_haiku
@@ -152,6 +154,12 @@ def main():
     dispatcher.add_handler(random_handler)
     authors_handler = CommandHandler('authors', authors)
     dispatcher.add_handler(authors_handler)
+    all_handler = CommandHandler('all', bot_all)
+    dispatcher.add_handler(all_handler)
+    japan_handler = CommandHandler('japan', japan)
+    dispatcher.add_handler(japan_handler)
+    other_handler = CommandHandler('other', other)
+    dispatcher.add_handler(other_handler)
     haiku_handler = MessageHandler(Filters.text, get_haiku)
     dispatcher.add_handler(haiku_handler)
     unknown_handler = MessageHandler(Filters.command, unknown)
@@ -162,32 +170,71 @@ def main():
     updater.idle()
 
 
+def bot_all(bot, update):
+    message = update.message.text
+    message = message[5:]
+    haiku_list = []
+    if message in bot_data.japan_key_words.keys():
+        haiku_pair = bot_data.japan_key_words[message][0]
+        haiku_list.append(bot_data.japan_haiku[haiku_pair[0]][haiku_pair[1]])
+    if message in bot_data.other_key_words.keys():
+        haiku_pair = bot_data.other_key_words[message][0]
+        haiku_list.append(bot_data.other_haiku[haiku_pair[0]][haiku_pair[1]])
+    
+    if len(haiku_list) != 0:
+        random_haiku = choice(haiku_list)
+    else:
+        bot.send_message(chat_id=update.message.chat_id, text='Sorry we do not find haiku with this word. Please, try again')
+        return False
+
+    bot.send_message(chat_id=update.message.chat_id, text=random_haiku)
+
+
+def japan(bot, update):
+    message = update.message.text
+    message = message[7:]
+    haiku_list = []
+    if message in bot_data.japan_key_words.keys():
+        haiku_pair = bot_data.japan_key_words[message][0]
+        haiku_list.append(bot_data.japan_haiku[haiku_pair[0]][haiku_pair[1]])  
+
+    if len(haiku_list) != 0:
+        random_haiku = choice(haiku_list)
+    else:
+        bot.send_message(chat_id=update.message.chat_id, text='Sorry we do not find haiku with this word. Please, try again')
+        return False
+
+    bot.send_message(chat_id=update.message.chat_id, text=random_haiku)
+
+
+def other(bot, update):
+    message = update.message.text
+    message = message[7:]
+    haiku_list = []
+    if message in bot_data.other_key_words.keys():
+        haiku_pair = bot_data.other_key_words[message][0]
+        haiku_list.append(bot_data.other_haiku[haiku_pair[0]][haiku_pair[1]])
+
+    if len(haiku_list) != 0:
+        random_haiku = choice(haiku_list)
+    else:
+        bot.send_message(chat_id=update.message.chat_id, text='Sorry we do not find haiku with this word. Please, try again')
+        return False
+
+    bot.send_message(chat_id=update.message.chat_id, text=random_haiku)
+
+
+
 def get_haiku(bot, update):
     message = update.message.text
-    message = message.split('> ')
-    if len(message) == 1 and (message[0] in bot_data.japan_haiku.keys() or message[0] in bot_data.other_haiku.keys()):
+    if message in bot_data.japan_haiku.keys() or message in bot_data.other_haiku.keys():
         if message[0] in bot_data.japan_haiku.keys():
-            random_haiku = choice(list(bot_data.japan_haiku[message[0]]))
+            random_haiku = choice(list(bot_data.japan_haiku[message]))
         else:
-            random_haiku = choice(list(bot_data.other_haiku[message[0]]))
-    elif len(message) == 2:
-        haiku_list = []
-        if message[1] in bot_data.japan_key_words.keys() and \
-                (message[0][1:] == 'all' or message[0][1:] == 'japan'):
-            haiku_pair = bot_data.japan_key_words[message[1]][0]
-            haiku_list.append(bot_data.japan_haiku[haiku_pair[0]][haiku_pair[1]])
-        if message[1] in bot_data.other_key_words.keys() and \
-                (message[0][1:] == 'all' or message[0][1:] == 'other'):
-            haiku_pair = bot_data.other_key_words[message[1]][0]
-            haiku_list.append(bot_data.other_haiku[haiku_pair[0]][haiku_pair[1]])
-
-        if len(haiku_list) != 0:
-            random_haiku = choice(haiku_list)
-        else:
-            bot.send_message(chat_id=update.message.chat_id, text='Sorry we do not find haiku with this word. Please, try again')
-    
+            random_haiku = choice(list(bot_data.other_haiku[message]))
     else:
-        bot.send_message(chat_id=update.message.chat_id, text='This text is not in right format')
+        bot.send_message(chat_id=update.message.chat_id, text='We don\'t find author with this name')
+        return False
 
     bot.send_message(chat_id=update.message.chat_id, text=random_haiku)
 
@@ -204,10 +251,10 @@ def unknown(bot, update):
 
 def bot_help(bot, update):
     bot.send_message(chat_id=update.message.chat_id,
-                     text="Please, write <tag> and some keyword or just author name to find haiku \n"
-                          "tags: \nall - find in all haiku\njapan - find only in japan haiku"
+                     text="Please, write command and some keyword or just author name to find haiku \n"
+                          "commang: \nall - find in all haiku\njapan - find only in japan haiku"
                           "\nother - find in other author(ordinary people)\n"
-                          "Example <all> Сакура\n\n"
+                          "Example /all Сакура\n\n"
                           "Also you can use:\n/random - find random haiku(without keywords)\n"
                           "/authors - to get list with authors name\n\n"
                           "P.S. Attention: all haiku on russian language, consequently, keywords too")
@@ -230,9 +277,11 @@ def bot_random(bot, update):
 
 def authors(bot, update):
     bot.send_message(chat_id=update.message.chat_id, text='japan authors:')
-    bot.send_message(chat_id=update.message.chat_id, text=bot_data.japan_haiku.keys().__str__())
+    for author in bot_data.japan_haiku.keys():
+        bot.send_message(chat_id=update.message.chat_id, text=author)
     bot.send_message(chat_id=update.message.chat_id, text='other authors:')
-    bot.send_message(chat_id=update.message.chat_id, text=bot_data.other_haiku.keys().__str__())
+    for author in bot_data.other_haiku.keys():
+        bot.send_message(chat_id=update.message.chat_id, text=author)
 
 
 print("I'm ready")
