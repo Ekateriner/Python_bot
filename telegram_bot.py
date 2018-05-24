@@ -2,133 +2,58 @@ from bs4 import BeautifulSoup
 import urllib.request
 import re
 import logging
-from random import choice
-import pickle
+from random import choice, choices
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
+import sqlalchemy
+from sqlalchemy import create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import Column, Integer, String, Boolean
+from sqlalchemy import ForeignKey
+from sqlalchemy.orm import relationship
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy import and_
 
 
-def parser_japan():
-    response = urllib.request.urlopen('http://japanpoetry.ru/japan-poets')
-    html = response.read()
-    html = html.decode('utf-8')
-
-    soup = BeautifulSoup(html, 'lxml')
-    japan_authors = soup.find_all('div', {"class": "author_name"})
-
-    japan_haiku = {}
-    for author in japan_authors:
-        for a_tag in author.find_all('a'):
-
-            author_response = urllib.request.urlopen('http://japanpoetry.ru{}'.format(a_tag['href']))
-            author_html = author_response.read()
-            author_html = author_html.decode('utf-8')
-            author_soup = BeautifulSoup(author_html, 'lxml')
-
-            author_name = (author_soup.find('h1'))['title']
-            japan_haiku[author_name] = []
-            all_texts = author_soup.find_all('div', {"class": "poetry"})
-            for text in all_texts:
-                href = ((text.find('div', {"class": "details"})).find('a'))['href']
-
-                text_response = urllib.request.urlopen('http://japanpoetry.ru{}'.format(href))
-                text_html = text_response.read()
-                text_html = text_html.decode('utf-8')
-                text_soup = BeautifulSoup(text_html, 'lxml')
-
-                haiku = '{}:\n{}\n\n'.format(author_name, text_soup.find('h1').get_text())
-                haiku_text = text_soup.find('div', {"class": "block_padding"}).get_text()
-                haiku = '{}{}'.format(haiku, haiku_text)
-                japan_haiku[author_name].append(haiku)
-    return japan_haiku
+engine = create_engine('sqlite:///haiku.db', echo=True)
+Base = declarative_base()
 
 
-def parser_other():
-    response2 = urllib.request.urlopen('http://japanpoetry.ru/authors')
-    html2 = response2.read()
-    html2 = html2.decode('utf-8')
+class Authors(Base):
+    __tablename__ = 'authors_table'
 
-    soup2 = BeautifulSoup(html2, 'lxml')
-    other_authors = soup2.find_all('div', {"class": "author_name"})
-
-    other_haiku = {}
-    for author in other_authors:
-        for a_tag in author.find_all('a'):
-
-            author_response = urllib.request.urlopen('http://japanpoetry.ru{}'.format(a_tag['href']))
-            author_html = author_response.read()
-            author_html = author_html.decode('utf-8')
-            author_soup = BeautifulSoup(author_html, 'lxml')
-
-            author_name = (author_soup.find('h1'))['title']
-            other_haiku[author_name] = []
-
-            for text in author_soup.find_all('div', {"class": "block_pandding"}):
-                haiku = '{}:\n{}\n\n'.format(author_name, text.find('div', {"class": "poetry_title"}).get_text())
-                haiku_text = author_soup.find('div', {"class": "foreword"}).get_text()
-                haiku = '{}{}\n'.format(haiku, haiku_text)
-                haiku_text = author_soup.find('div', {"class": "poetry_text"}).get_text()
-                haiku = '{}{}'.format(haiku, haiku_text)
-                other_haiku[author_name].append(haiku)
-    return other_haiku
+    id = Column(Integer, primary_key=True)
+    name = Column(String)
+    type = Column(Boolean) #true=japan, false=other
+    haiku = relationship("Haiku")
 
 
-def dict_creator_japan(japan_haiku):
-    japan_key_words = {}
-    for author in japan_haiku:
-        for i in range(len(japan_haiku[author])):
-            haiku = japan_haiku[author][i]
-            index = haiku.find(':')
-            words = re.split(r'[ |\r|\n]+', haiku[index + 1:])
-            for word in words:
-                if word in japan_key_words:
-                    japan_key_words[word].append((author, i))
-                else:
-                    japan_key_words[word] = []
-                    japan_key_words[word].append((author, i))
-    return japan_key_words
+class Haiku(Base):
+    __tablename__ = 'haiku_table'
+
+    id = Column(Integer, primary_key=True)
+    text = Column(String)
+    author_id = Column(Integer, ForeignKey('authors_table.id'))
+    author = relationship("Authors", back_populates="haiku")
+    words = relationship("Words")
 
 
-def dict_creator_other(other_haiku):
-    other_key_words = {}
-    for author in other_haiku:
-        for i in range(len(other_haiku[author])):
-            haiku = other_haiku[author][i]
-            index = haiku.find(':')
-            words = re.split(r'[ |\r|\n]+', haiku[index + 1:])
-            for word in words:
-                if word in other_key_words:
-                    other_key_words[word].append((author, i))
-                else:
-                    other_key_words[word] = []
-                    other_key_words[word].append((author, i))
-    return other_key_words
+class Words(Base):
+    __tablename__ = 'words_table'
+
+    id = Column(Integer, primary_key=True)
+    text = Column(String)
+    haiku_id = Column(Integer, ForeignKey('haiku_table.id'))
+    haiku = relationship("Haiku", back_populates="words")
 
 
-class HaikuData:
-    def __init__(self):
-        self.japan_haiku = parser_japan()
-        self.other_haiku = parser_other()
-        self.japan_key_words = dict_creator_japan(self.japan_haiku)
-        self.other_key_words = dict_creator_other(self.other_haiku)
-
-    def update(self):
-        self.japan_haiku = {}
-        self.other_haiku = {}
-        self.japan_key_words = {}
-        self.other_key_words = {}
-        self.japan_haiku = parser_japan()
-        self.other_haiku = parser_other()
-        self.japan_key_words = dict_creator_japan(self.japan_haiku)
-        self.other_key_words = dict_creator_other(self.other_haiku)
+Base.metadata.create_all(engine)
+Session = sessionmaker(bind=engine)
+session = Session()
 
 
 '''telegram part'''
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-
-'''bot_data = HaikuData()'''
-with open("model.txt", 'rb') as file:
-    bot_data = pickle.load(file)
 
 
 class WrongTextError(ValueError):
@@ -173,16 +98,9 @@ def main():
 def bot_all(bot, update):
     message = update.message.text
     message = message[5:]
-    haiku_list = []
-    if message in bot_data.japan_key_words.keys():
-        haiku_pair = bot_data.japan_key_words[message][0]
-        haiku_list.append(bot_data.japan_haiku[haiku_pair[0]][haiku_pair[1]])
-    if message in bot_data.other_key_words.keys():
-        haiku_pair = bot_data.other_key_words[message][0]
-        haiku_list.append(bot_data.other_haiku[haiku_pair[0]][haiku_pair[1]])
-    
+    haiku_list = session.query(Haiku.text).join(Words, Words.haiku_id==Haiku.id).filter(Words.text==message).all()
     if len(haiku_list) != 0:
-        random_haiku = choice(haiku_list)
+        random_haiku = choice(haiku_list)[0]
     else:
         bot.send_message(chat_id=update.message.chat_id, text='Sorry we do not find haiku with this word. Please, try again')
         return False
@@ -193,13 +111,9 @@ def bot_all(bot, update):
 def japan(bot, update):
     message = update.message.text
     message = message[7:]
-    haiku_list = []
-    if message in bot_data.japan_key_words.keys():
-        haiku_pair = bot_data.japan_key_words[message][0]
-        haiku_list.append(bot_data.japan_haiku[haiku_pair[0]][haiku_pair[1]])  
-
+    haiku_list = session.query(Haiku.text).join(Words, Words.haiku_id==Haiku.id).join(Authors, Authors.id==Haiku.author_id).filter(and_(Words.text==message, Authors.type==True)).all()
     if len(haiku_list) != 0:
-        random_haiku = choice(haiku_list)
+        random_haiku = choice(haiku_list)[0]
     else:
         bot.send_message(chat_id=update.message.chat_id, text='Sorry we do not find haiku with this word. Please, try again')
         return False
@@ -210,13 +124,10 @@ def japan(bot, update):
 def other(bot, update):
     message = update.message.text
     message = message[7:]
-    haiku_list = []
-    if message in bot_data.other_key_words.keys():
-        haiku_pair = bot_data.other_key_words[message][0]
-        haiku_list.append(bot_data.other_haiku[haiku_pair[0]][haiku_pair[1]])
+    haiku_list = session.query(Haiku.text).join(Words, Words.haiku_id==Haiku.id).join(Authors, Authors.id==Haiku.author_id).filter(and_(Words.text==message, Authors.type==False)).all()
 
     if len(haiku_list) != 0:
-        random_haiku = choice(haiku_list)
+        random_haiku = choice(haiku_list)[0]
     else:
         bot.send_message(chat_id=update.message.chat_id, text='Sorry we do not find haiku with this word. Please, try again')
         return False
@@ -227,11 +138,9 @@ def other(bot, update):
 
 def get_haiku(bot, update):
     message = update.message.text
-    if message in bot_data.japan_haiku.keys() or message in bot_data.other_haiku.keys():
-        if message[0] in bot_data.japan_haiku.keys():
-            random_haiku = choice(list(bot_data.japan_haiku[message]))
-        else:
-            random_haiku = choice(list(bot_data.other_haiku[message]))
+    author_haiku = session.query(Haiku.text).join(Authors, Authors.id==Haiku.author_id).filter(Authors.name==message).all()
+    if len(author_haiku) != 0:
+        random_haiku = choice(author_haiku)[0]
     else:
         bot.send_message(chat_id=update.message.chat_id, text='We don\'t find author with this name')
         return False
@@ -265,23 +174,21 @@ def error(bot, update, error):
 
 
 def bot_random(bot, update):
-    flag = choice([True, False])
-    if flag:
-        author = choice(list(bot_data.japan_haiku.keys()))
-        random_haiku = choice(bot_data.japan_haiku[author])
-    else:
-        author = choice(list(bot_data.other_haiku.keys()))
-        random_haiku = choice(bot_data.other_haiku[author])
+    all_haiku = session.query(Haiku.text).all()
+    random_haiku = choice(all_haiku)[0]
     bot.send_message(chat_id=update.message.chat_id, text=random_haiku)
 
 
 def authors(bot, update):
-    bot.send_message(chat_id=update.message.chat_id, text='japan authors:')
-    for author in bot_data.japan_haiku.keys():
-        bot.send_message(chat_id=update.message.chat_id, text=author)
-    bot.send_message(chat_id=update.message.chat_id, text='other authors:')
-    for author in bot_data.other_haiku.keys():
-        bot.send_message(chat_id=update.message.chat_id, text=author)
+    bot.send_message(chat_id=update.message.chat_id, text='some japan authors:')
+    random_authors = session.query(Authors.name).filter(Authors.type==True).all()
+    for author in choices(random_authors, k=5):
+        bot.send_message(chat_id=update.message.chat_id, text=author[0])
+    
+    bot.send_message(chat_id=update.message.chat_id, text='some other authors:')
+    random_authors = session.query(Authors.name).filter(Authors.type==False).all()
+    for author in choices(random_authors, k=5):
+        bot.send_message(chat_id=update.message.chat_id, text=author[0])
 
 
 print("I'm ready")
